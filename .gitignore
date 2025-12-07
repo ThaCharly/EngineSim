@@ -1,0 +1,5 @@
+# Compilados y temporales
+build/
+
+# CMake
+CMakeLists.txt
