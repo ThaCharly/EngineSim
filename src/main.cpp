@@ -112,10 +112,19 @@ int main() {
 
 
         // --- VIBRACIÓN DE PANTALLA (SCREEN SHAKE) ---
-        if (currentRPM > 1000.f) {
-            float shakeIntensity = (currentRPM - 1000.f) / 1000.f; // 0 a 1
-            float offsetX = ((rand() % 10) - 5) * shakeIntensity * 1.5f; // +/- pixeles
-            float offsetY = ((rand() % 10) - 5) * shakeIntensity * 1.5f;
+// --- VIBRACIÓN DE PANTALLA (SCREEN SHAKE) MEJORADO ---
+        // Solo vibra si pasa de 1800 RPM (ralentí alto)
+        if (currentRPM > 1800.f) {
+            // Factor de intensidad suavizado: (RPM actual - base) / rango
+            float shakeIntensity = (currentRPM - 800.f) / 1200.f; // 0.0 a 1.0 aprox hasta 2000rpm
+            if (shakeIntensity > 1.0f) shakeIntensity = 1.0f;     // Tope máximo (Clamp)
+
+            // Multiplicador reducido drásticamente: antes 1.5f, ahora 0.3f
+            float maxOffset = 3.0f; // Máximo desplazamiento en píxeles
+            
+            float offsetX = ((rand() % 100) / 50.f - 1.f) * shakeIntensity * maxOffset;
+            float offsetY = ((rand() % 100) / 50.f - 1.f) * shakeIntensity * maxOffset;
+            
             view.setCenter(baseCenter.x + offsetX, baseCenter.y + offsetY);
         } else {
             view.setCenter(baseCenter);

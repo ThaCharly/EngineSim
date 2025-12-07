@@ -2,58 +2,79 @@
 #include <SFML/Audio.hpp>
 #include <vector>
 #include <cmath>
+#include <cstdlib>
 
 class SoundGenerator : public sf::SoundStream {
 public:
     SoundGenerator() : currentRPM(0), amplitude(0) {
-        // Inicializamos el stream: 1 canal (mono), 44100Hz
         initialize(1, 44100);
     }
 
     void setRPM(float rpm) {
-        currentRPM = rpm;
+        // Suavizado simple para que el tono no salte de golpe
+        currentRPM = currentRPM * 0.9f + rpm * 0.1f;
     }
 
     void setVolume(float vol) {
-        amplitude = vol; // 0.0 a 1.0 (aprox)
+        amplitude = vol;
     }
 
 protected:
-    // SFML nos pide rellenar 'samples' cada vez que se queda sin audio
     virtual bool onGetData(Chunk& data) {
-        const int samplesToStream = 4096; // Tamaño del buffer
+        const int samplesToStream = 4096;
         static std::vector<sf::Int16> samples(samplesToStream);
-
-        // Frecuencia de muestreo
         const float sampleRate = 44100.f;
 
         for (int i = 0; i < samplesToStream; ++i) {
-            // Frecuencia base del motor:
-            // 4 tiempos = 1 explosión cada 2 vueltas.
-            // Frecuencia (Hz) = (RPM / 60) / 2.
-            // Para que suene más "gordo", multiplicamos por armónicos.
-            float baseFreq = (currentRPM / 60.f); 
-            if (baseFreq < 1.0f) baseFreq = 1.0f; // Evitar div 0
-
             time += 1.0f / sampleRate;
 
-            // SÍNTESIS: Onda diente de sierra (agresiva para motores)
-            // fmod(time * freq, 1.0) genera 0..1 repetitivo
-            float wave = 0.f;
+            // --- SÍNTESIS DE MOTOR DE COMBUSTIÓN ---
             
-            // Fundamental (grave)
-            wave += 0.5f * (std::fmod(time * baseFreq * 25.0f, 1.0f) * 2.0f - 1.0f);
-            // Armónico agudo (valvuleo)
-            wave += 0.3f * (std::fmod(time * baseFreq * 50.0f, 1.0f) * 2.0f - 1.0f);
-            
-            // Ruido blanco (aire/escape)
-            float noise = ((rand() % 100) / 50.f - 1.f) * 0.2f;
+            // 1. Frecuencia de Disparo (Firing Frequency)
+            // En un 4 tiempos, explota 1 vez cada 2 vueltas.
+            // Hz = (RPM / 60) / 2 = RPM / 120.
+            // Usamos un mínimo de 600 RPM para evitar divisiones por cero o infrasonidos raros.
+            float effectiveRPM = (currentRPM < 100.f) ? 100.f : currentRPM;
+            float fireFreq = effectiveRPM / 120.0f; 
 
-            float finalSample = (wave + noise) * amplitude * 10000.f; // Escalar a Int16
+            // 2. Oscilador Principal (Diente de Sierra - Sawtooth)
+            // Esto marca el ritmo de las explosiones.
+            // fmod genera un valor de 0.0 a 1.0 repetitivo.
+            float periodPos = std::fmod(time * fireFreq, 1.0f);
             
-            // Hard clip para distorsión de motor sucio
-            if (finalSample > 30000) finalSample = 30000;
-            if (finalSample < -30000) finalSample = -30000;
+            // Transformamos 0..1 en una onda diente de sierra que cae (-1 a 1)
+            // Esta forma de onda tiene mucha energía en graves.
+            float rawSaw = 1.0f - (2.0f * periodPos);
+
+            // 3. Textura (Ruido)
+            // El motor es metal golpeando y gas escapando. Eso es ruido blanco.
+            float noise = ((std::rand() % 100) / 50.f - 1.f);
+
+            // 4. Modulación (La Magia)
+            // No queremos que el ruido suene todo el tiempo (shhhhh).
+            // Queremos que suene fuerte cuando explota y baje.
+            // Usamos el 'rawSaw' para controlar el volumen del ruido.
+            // Cuando rawSaw es alto (inicio explosión), dejamos pasar el ruido.
+            float envelope = rawSaw; 
+            if (envelope < 0) envelope = 0; // Solo la parte positiva
+            
+            // Mezcla:
+            // - Tono base (onda cuadrada distorsionada de la sierra) para el "cuerpo" grave.
+            // - Ruido modulado para la "textura" del escape.
+            
+            float body = (rawSaw > 0) ? 1.0f : -1.0f; // Onda cuadrada (Square wave) = Sonido 8-bit gordo
+            float engineTone = (body * 0.5f) + (noise * envelope * 0.8f);
+
+            // 5. Filtro Low-Pass "Trucho" (Simulado)
+            // A altas RPM, bajamos un poco el volumen de los agudos para que no chille.
+            if (currentRPM > 4000) engineTone *= 0.5f;
+
+            // 6. Output Final
+            float finalSample = engineTone * amplitude * 8000.f;
+
+            // Soft Clipping para distorsión analógica (evita el "clipping" digital feo)
+            if (finalSample > 32000) finalSample = 32000;
+            if (finalSample < -32000) finalSample = -32000;
 
             samples[i] = static_cast<sf::Int16>(finalSample);
         }
@@ -63,9 +84,7 @@ protected:
         return true;
     }
 
-    virtual void onSeek(sf::Time timeOffset) {
-        // No necesario para generadores procedurales
-    }
+    virtual void onSeek(sf::Time timeOffset) {}
 
 private:
     float currentRPM;
