@@ -2,116 +2,174 @@
 #include <cmath>
 
 #ifndef M_PI
-#define M_PI 3.14159265358979323846264338327950288419716939937510582097494459230781640628620899862803482534211706798214808651328230664709384460955058223172535940812848111745028410270193852110555964462294895493038196442881097566593344612847564823378678316527120190914564856692346034861045432664821339360726024914127372458700660631558817488152092096282925409171536436789259036001133053054882046652138414695194151160943305727036575959195309218611738193261179310511854807446237996274956735188575272489122793818301194912983367336244065664308602139494639522473719070217986094370277053921717629317675238467481846766940513200056812714526356082778577134275778960917363717872146844090122495343014654958537105079227968925892354201995611212902196086403441815981362977477130996051870721134999999837297804995105973173281609631859502445945534690830264252230825334468503526193118817101100313388246468157082630100594858704003186480342194897278290641045072636881313739855256117322040245091227700226941127573627280495738108967504018369868368450725799364729060762996941380475654823728997180326802474420629269124859052181004459842150591120249441341728531478105803860326071847891885627529465490681131715993432359734949850904452444873330391072253837421821408835086569637893063936
-
+#define M_PI 3.14159265358979323846
 #endif
 
 Piston::Piston(float x, float y) 
-    : crankCenter(x, y), crankRadius(50.f), rodLength(140.f) 
+    : crankCenter(x, y), crankRadius(50.f), rodLength(150.f) // Aumenté biela a 150 para suavizar ángulo
 {
-    // 1. Configurar el centro del cigüeñal (Main Bearing)
+    // --- CONFIGURACIÓN DE COLORES Y ESTILOS ---
+    sf::Color steelColor(160, 160, 160);
+    sf::Color darkSteel(100, 100, 100);
+    sf::Color ironColor(70, 70, 80);      // Bloque motor oscuro
+    sf::Color aluminumColor(200, 200, 200); // Pistón y Culata
+    sf::Color valveColor(180, 180, 180);
+
+    // 1. CIGÜEÑAL
     mainBearing.setRadius(15.f);
     mainBearing.setOrigin(15.f, 15.f);
     mainBearing.setPosition(crankCenter);
-    mainBearing.setFillColor(sf::Color(80, 80, 80)); // Gris oscuro
+    mainBearing.setFillColor(sf::Color(40, 40, 40));
 
-    // 2. Configurar brazo del cigüeñal (Crank Arm)
-    crankArm.setSize(sf::Vector2f(crankRadius, 20.f));
-    crankArm.setOrigin(0.f, 10.f); // Pivota desde el centro
+    crankArm.setSize(sf::Vector2f(crankRadius, 24.f)); // Un poco más robusto
+    crankArm.setOrigin(0.f, 12.f);
     crankArm.setPosition(crankCenter);
-    crankArm.setFillColor(sf::Color(100, 100, 100));
+    crankArm.setFillColor(darkSteel);
 
-    // 3. Configurar la muñequilla (Crank Pin)
     crankPin.setRadius(10.f);
     crankPin.setOrigin(10.f, 10.f);
-    crankPin.setFillColor(sf::Color(50, 50, 50));
+    crankPin.setFillColor(sf::Color(30, 30, 30));
 
-    // 4. Configurar la Biela (Connecting Rod)
-    // La haremos un poco más larga visualmente para que solape bien
-    pistonRod.setSize(sf::Vector2f(10.f, rodLength + 10.f)); 
-    pistonRod.setOrigin(5.f, 0.f); // Pivota desde arriba (unión con pistón)
-    pistonRod.setFillColor(sf::Color(160, 160, 160)); // Acero
+    // 2. BIELA (Ahora más realista, más ancha abajo)
+    pistonRod.setSize(sf::Vector2f(14.f, rodLength + 10.f)); 
+    pistonRod.setOrigin(7.f, 0.f); 
+    pistonRod.setFillColor(steelColor);
 
-    // 5. Configurar la Cabeza del Pistón
-    pistonHead.setSize(sf::Vector2f(60.f, 50.f));
-    pistonHead.setOrigin(30.f, 25.f); // Centro del pistón
-    pistonHead.setFillColor(sf::Color(200, 200, 200)); // Aluminio
-    pistonHead.setOutlineThickness(2.f);
+    // 3. PISTÓN
+    // Ancho del pistón = 64. Haremos el cilindro de 66 para dejar holgura de 1px por lado.
+    pistonHead.setSize(sf::Vector2f(64.f, 50.f));
+    pistonHead.setOrigin(32.f, 25.f); 
+    pistonHead.setFillColor(aluminumColor);
+    // Anillos del pistón (detalle visual simple usando borde)
+    pistonHead.setOutlineThickness(-2.f); // Borde interior
     pistonHead.setOutlineColor(sf::Color(50, 50, 50));
 
-    // 6. Bulón (Wrist Pin)
-    wristPin.setRadius(6.f);
-    wristPin.setOrigin(6.f, 6.f);
+    wristPin.setRadius(7.f);
+    wristPin.setOrigin(7.f, 7.f);
     wristPin.setFillColor(sf::Color(50, 50, 50));
 
-    // 7. Paredes del cilindro (Líneas estáticas)
-    cylinderWalls.setPrimitiveType(sf::Lines);
-    // Pared izquierda
-    cylinderWalls.append(sf::Vertex(sf::Vector2f(x - 32.f, y - crankRadius - rodLength - 60.f), sf::Color::White));
-    cylinderWalls.append(sf::Vertex(sf::Vector2f(x - 32.f, y - 50.f), sf::Color::White));
-    // Pared derecha
-    cylinderWalls.append(sf::Vertex(sf::Vector2f(x + 32.f, y - crankRadius - rodLength - 60.f), sf::Color::White));
-    cylinderWalls.append(sf::Vertex(sf::Vector2f(x + 32.f, y - 50.f), sf::Color::White));
+    // --- CONSTRUCCIÓN DEL MOTOR (BLOQUE) ---
+    
+    // Calculamos alturas clave
+    // TDC (Punto Muerto Superior) del centro del bulón: y - crank - rod
+    float tdcY = y - crankRadius - rodLength; 
+    // Altura de la tapa (Deck height): un poco más arriba del TDC del pistón
+    float deckHeight = tdcY - 35.f; // Espacio para compresión
+
+    // A. Bloque Izquierdo (Corte transversal)
+    leftBlock.setPointCount(5);
+    // 0. Esquina superior interior (borde del cilindro)
+    leftBlock.setPoint(0, sf::Vector2f(x - 34.f, deckHeight)); 
+    // 1. Abajo, fin del cilindro (comienzo del cárter)
+    leftBlock.setPoint(1, sf::Vector2f(x - 34.f, y - 20.f)); 
+    // 2. Ensanchamiento para el cigüeñal
+    leftBlock.setPoint(2, sf::Vector2f(x - 80.f, y + 20.f)); 
+    // 3. Fondo exterior
+    leftBlock.setPoint(3, sf::Vector2f(x - 80.f, y + 80.f));
+    // 4. Arriba exterior (cierre)
+    leftBlock.setPoint(4, sf::Vector2f(x - 100.f, deckHeight));
+    leftBlock.setFillColor(ironColor);
+    leftBlock.setOutlineThickness(2.f);
+    leftBlock.setOutlineColor(sf::Color::Black);
+
+    // B. Bloque Derecho (Espejo del izquierdo)
+    rightBlock.setPointCount(5);
+    rightBlock.setPoint(0, sf::Vector2f(x + 34.f, deckHeight)); 
+    rightBlock.setPoint(1, sf::Vector2f(x + 34.f, y - 20.f)); 
+    rightBlock.setPoint(2, sf::Vector2f(x + 80.f, y + 20.f)); 
+    rightBlock.setPoint(3, sf::Vector2f(x + 80.f, y + 80.f));
+    rightBlock.setPoint(4, sf::Vector2f(x + 100.f, deckHeight));
+    rightBlock.setFillColor(ironColor);
+    rightBlock.setOutlineThickness(2.f);
+    rightBlock.setOutlineColor(sf::Color::Black);
+
+    // C. Culata (Cylinder Head)
+    headBlock.setSize(sf::Vector2f(200.f, 60.f));
+    headBlock.setOrigin(100.f, 60.f); // Pivote abajo al centro para colocar sobre el deck
+    headBlock.setPosition(x, deckHeight);
+    headBlock.setFillColor(aluminumColor);
+    headBlock.setOutlineThickness(2.f);
+    headBlock.setOutlineColor(sf::Color(50, 50, 50));
+
+    // --- VÁLVULAS Y BUJÍA ---
+
+    // Válvula Admisión (Izquierda)
+    valveIntake.setSize(sf::Vector2f(8.f, 50.f));
+    valveIntake.setOrigin(4.f, 0.f);
+    // Posicionada en la culata, desplazada a la izquierda
+    valveIntake.setPosition(x - 25.f, deckHeight - 55.f); 
+    valveIntake.setFillColor(valveColor);
+
+    // Válvula Escape (Derecha)
+    valveExhaust.setSize(sf::Vector2f(8.f, 50.f));
+    valveExhaust.setOrigin(4.f, 0.f);
+    valveExhaust.setPosition(x + 25.f, deckHeight - 55.f);
+    valveExhaust.setFillColor(valveColor);
+
+    // Bujía (Centro)
+    sparkPlugBody.setSize(sf::Vector2f(12.f, 30.f));
+    sparkPlugBody.setOrigin(6.f, 15.f);
+    sparkPlugBody.setPosition(x, deckHeight - 60.f); // Arriba de la culata
+    sparkPlugBody.setFillColor(sf::Color::White); // Cerámica
+
+    sparkPlugTip.setSize(sf::Vector2f(4.f, 15.f)); // El electrodo que entra
+    sparkPlugTip.setOrigin(2.f, 0.f);
+    sparkPlugTip.setPosition(x, deckHeight - 45.f);
+    sparkPlugTip.setFillColor(sf::Color(30, 30, 30));
 }
 
 void Piston::update(float angle) {
-    // 1. Calcular posición de la muñequilla (Crank Pin)
-    // Usamos coordenadas polares estándar.
-    // Nota: Si quieres que angle=0 sea "Arriba" (TDC), usa sin(a) para X y -cos(a) para Y.
-    // Pero para simplificar, usaremos el estándar matemático (0 = Derecha):
+    // 1. Cinemática
     float crankX = crankCenter.x + crankRadius * std::cos(angle);
     float crankY = crankCenter.y + crankRadius * std::sin(angle);
     sf::Vector2f crankPos(crankX, crankY);
 
-    // 2. Calcular posición del Pistón
-    // Pitágoras: La biela (rod) es la hipotenusa, la distancia X es un cateto.
     float dx = crankX - crankCenter.x;
     float diffX = std::abs(dx);
     
-    // Altura vertical desde la muñequilla hasta el pistón
+    // Pitágoras para altura del pistón
+    // Si la biela es muy corta, esto podría dar NaN, pero con 150 vs 50 es seguro.
     float rodVerticalH = std::sqrt(rodLength * rodLength - diffX * diffX);
-    
-    // La posición Y del pistón es la Y de la muñequilla MENOS la altura vertical (porque sube)
     sf::Vector2f pistonPos(crankCenter.x, crankY - rodVerticalH);
 
-
-    // --- ACTUALIZAR VISUALES ---
-
-    // A. Muñequilla (La bolita gris oscura)
+    // 2. Actualizar posiciones visuales
     crankPin.setPosition(crankPos);
 
-    // B. Brazo del cigüeñal (El rectángulo gris oscuro)
-    // CORRECCIÓN CLAVE: No uses 'angle' directo. Calcula el ángulo real del vector.
     sf::Vector2f delta = crankPos - crankCenter;
     float armRotation = std::atan2(delta.y, delta.x) * 180.f / M_PI;
-    
     crankArm.setPosition(crankCenter);
     crankArm.setRotation(armRotation); 
 
-    // C. Pistón y Bulón
     pistonHead.setPosition(pistonPos);
     wristPin.setPosition(pistonPos);
 
-    // D. Biela (El rectángulo largo)
-    // Misma lógica: calculamos el ángulo entre el pistón y la muñequilla
-    pistonRod.setPosition(pistonPos); // Anclada arriba
-    
-    sf::Vector2f rodDelta = crankPos - pistonPos; // Vector desde el pistón hacia la muñequilla
+    // 3. Rotación de la biela
+    pistonRod.setPosition(pistonPos); 
+    sf::Vector2f rodDelta = crankPos - pistonPos; 
     float rodAngle = std::atan2(rodDelta.y, rodDelta.x) * 180.f / M_PI;
-    
-    // Restamos 90 grados porque el rectángulo de SFML suele estar horizontal por defecto
-    // o ajustamos según tu 'setOrigin'. 
-    // Si tu biela es vertical (height > width), el ángulo base es -90 offset.
-    // Asumiendo que definiste la biela vertical:
     pistonRod.setRotation(rodAngle - 90.f); 
 }
 
 void Piston::draw(sf::RenderWindow& window) {
-    window.draw(cylinderWalls); // Dibujar paredes detrás
-    window.draw(pistonRod);     // Biela detrás del pistón
+    // Orden de dibujo (capas):
+    // 1. Partes traseras del bloque
+    window.draw(sparkPlugTip); // Punta dentro de la cámara
+    window.draw(valveIntake);
+    window.draw(valveExhaust);
+    
+    // 2. El bloque motor (tapa las partes superiores de las válvulas si quisieras animarlas)
+    window.draw(leftBlock);
+    window.draw(rightBlock);
+    window.draw(headBlock);
+    window.draw(sparkPlugBody);
+
+    // 3. Partes móviles internas
+    window.draw(pistonRod);     // Biela detrás
+    window.draw(pistonHead);    // Pistón
+    window.draw(wristPin);      // Bulón
+    
+    // 4. Cigüeñal (al frente)
     window.draw(crankArm);
     window.draw(mainBearing);
-    window.draw(pistonHead);
-    window.draw(wristPin);
-    window.draw(crankPin);      // Muñequilla encima de la biela
+    window.draw(crankPin);      
 }
