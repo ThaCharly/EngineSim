@@ -245,6 +245,9 @@ CMakeFiles/MotorSim.dir/src/main.cpp.o: \
  /usr/include/SFML/Graphics/Glsl.hpp /usr/include/SFML/Graphics/Glsl.inl \
  /usr/include/SFML/Graphics/Sprite.hpp \
  /usr/include/SFML/Graphics/Text.hpp \
- /usr/include/SFML/Graphics/VertexBuffer.hpp \
+ /usr/include/SFML/Graphics/VertexBuffer.hpp /usr/include/c++/15/iomanip \
+ /usr/include/c++/15/bits/quoted_string.h /usr/include/c++/15/sstream \
+ /usr/include/c++/15/istream /usr/include/c++/15/bits/istream.tcc \
+ /usr/include/c++/15/bits/sstream.tcc \
  /home/thacharly/C++/C++/include/Engine.hpp \
  /home/thacharly/C++/C++/include/Piston.hpp
