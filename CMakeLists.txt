@@ -13,4 +13,4 @@ add_executable(MotorSim
     src/Piston.cpp
 )
 
-target_link_libraries(MotorSim sfml-graphics sfml-window sfml-system)
+target_link_libraries(MotorSim sfml-graphics sfml-window sfml-system sfml-audio)

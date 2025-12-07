@@ -2,15 +2,16 @@
 #include <iomanip>
 #include <sstream>
 #include <vector>
-#include <cstdlib> // para rand()
+#include <cstdlib>
 #include "Engine.hpp"
 #include "Piston.hpp"
+#include "SoundGenerator.hpp" // <--- Importante!
 
-// --- ESTRUCTURA PARA EL HUMO ---
+// --- PARTÍCULAS (Mismo código de antes) ---
 struct Particle {
     sf::Vector2f position;
     sf::Vector2f velocity;
-    float lifetime;     // Cuánto vive
+    float lifetime;
     float maxLifetime;
     float size;
     float rotation;
@@ -18,103 +19,123 @@ struct Particle {
 };
 
 int main() {
-    // Ventana un poco más ancha para que entre el HUD cómodo
     sf::RenderWindow window(sf::VideoMode(900, 600), "Engine Simulation - Ultimate Edition");
     window.setFramerateLimit(60);
 
+    // --- CÁMARA (VIEW) PARA EL EFECTO DE VIBRACIÓN ---
+    sf::View view = window.getDefaultView();
+    sf::Vector2f baseCenter = view.getCenter();
+
     Engine engine;
-    Piston piston(400.f, 400.f); // Centrado a la izquierda, HUD a la derecha
+    Piston piston(400.f, 400.f);
     
+    // --- SONIDO ---
+    SoundGenerator engineSound;
+    engineSound.play(); // Arrancar el stream (sonará silencio si rpm=0)
+
     sf::Font font;
-    // Intentar cargar fuentes del sistema si las locales fallan, o usar las provistas
     if (!font.loadFromFile("../fonts/arial.ttf")) {
-        // Fallback simple por si acaso
+        // Manejo de error básico
     }
 
-    // --- ELEMENTOS DEL HUD ---
+    // --- HUD MEJORADO ---
     sf::Text rpmText;
     rpmText.setFont(font);
-    rpmText.setCharacterSize(40); // Más grande
-    rpmText.setFillColor(sf::Color::White);
-    rpmText.setPosition(600.f, 50.f);
+    rpmText.setCharacterSize(50); // Masivo
+    rpmText.setPosition(600.f, 40.f);
+
+    sf::Text statsText; // Odómetro y Tiempo
+    statsText.setFont(font);
+    statsText.setCharacterSize(18);
+    statsText.setFillColor(sf::Color(200, 200, 200));
+    statsText.setPosition(600.f, 100.f);
 
     sf::Text phaseText;
     phaseText.setFont(font);
     phaseText.setCharacterSize(25);
-    phaseText.setFillColor(sf::Color(255, 200, 0)); // Dorado
-    phaseText.setPosition(600.f, 110.f);
+    phaseText.setPosition(600.f, 140.f);
 
     sf::Text controlsText;
     controlsText.setFont(font);
-    controlsText.setCharacterSize(16);
-    controlsText.setFillColor(sf::Color(180, 180, 180));
-    controlsText.setPosition(600.f, 300.f);
+    controlsText.setCharacterSize(14);
+    controlsText.setFillColor(sf::Color(150, 150, 150));
+    controlsText.setPosition(600.f, 350.f);
     controlsText.setString(
         "CONTROLES:\n\n"
-        "[E]      Encender\n"
-        "[W]      Acelerador\n"
-        "[ESPACIO] Freno\n"
-        "[Q]      Apagar (Freno Total)\n"
+        "[E]      Arranque\n"
+        "[W]      Acelerar\n"
+        "[ESP]    Freno\n"
+        "[Q]      Apagar\n"
         "[C]      Crucero\n"
-        "[S]      Camara Lenta (Hold)"
+        "[S]      Slow-Mo"
     );
 
-    // Barras visuales
-    sf::RectangleShape throttleBarBack(sf::Vector2f(200.f, 20.f));
-    throttleBarBack.setPosition(600.f, 160.f);
-    throttleBarBack.setFillColor(sf::Color(50, 50, 50));
-    
-    sf::RectangleShape throttleBarFill(sf::Vector2f(0.f, 20.f));
-    throttleBarFill.setPosition(600.f, 160.f);
-    throttleBarFill.setFillColor(sf::Color(0, 255, 100)); // Verde
+    // Barra RPM Gráfica (Fondo + Relleno)
+    sf::RectangleShape rpmBarBack(sf::Vector2f(250.f, 10.f));
+    rpmBarBack.setPosition(600.f, 95.f);
+    rpmBarBack.setFillColor(sf::Color(30, 30, 30));
 
-    // Sistema de partículas
+    sf::RectangleShape rpmBarFill(sf::Vector2f(0.f, 10.f));
+    rpmBarFill.setPosition(600.f, 95.f);
+
     std::vector<Particle> smokeParticles;
-
     sf::Clock clock;
+    sf::Clock runTimeClock; // Tiempo total corriendo
     
-    // Variable para la cámara lenta
     float timeScale = 1.0f;
 
     while (window.isOpen()) {
         sf::Event event;
         while (window.pollEvent(event)) {
-            if (event.type == sf::Event::Closed)
-                window.close();
+            if (event.type == sf::Event::Closed) window.close();
         }
 
-        // Delta time real
         float dtReal = clock.restart().asSeconds();
         
-        // --- LOGICA DE CAMARA LENTA ---
-        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) {
-            timeScale = 0.1f; // 10% de velocidad
-        } else {
-            timeScale = 1.0f;
-        }
+        // Input Slow-Mo
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::S)) timeScale = 0.1f;
+        else timeScale = 1.0f;
 
-        // El motor usa el dt escalado
         float dtSim = dtReal * timeScale;
-        
         float currentRPM = engine.getRPM();
+
+        // --- SONIDO (Actualizar frecuencia y volumen) ---
+        // Volumen basado en RPM (más rápido = más fuerte)
+        float targetVol = 0.0f;
+        if (currentRPM > 50) targetVol = 0.2f + (currentRPM / 2500.f) * 0.8f;
+        
+        // Si estamos acelerando (W), ruge más fuerte
+        if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) targetVol += 0.2f;
+
+        engineSound.setRPM(currentRPM);
+        engineSound.setVolume(targetVol);
+
+
+        // --- VIBRACIÓN DE PANTALLA (SCREEN SHAKE) ---
+        if (currentRPM > 1000.f) {
+            float shakeIntensity = (currentRPM - 1000.f) / 1000.f; // 0 a 1
+            float offsetX = ((rand() % 10) - 5) * shakeIntensity * 1.5f; // +/- pixeles
+            float offsetY = ((rand() % 10) - 5) * shakeIntensity * 1.5f;
+            view.setCenter(baseCenter.x + offsetX, baseCenter.y + offsetY);
+        } else {
+            view.setCenter(baseCenter);
+        }
+        window.setView(view);
+
 
         // Inputs
         float throttle = 0.f;
         float brake = 0.f;
-
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::E)) throttle = 6.f; 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Q)) brake = 6000.f;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::W)) throttle += 1.f;
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::Space)) brake += 400.f;
 
-        // Física del motor
         engine.accelerate(throttle);
         engine.deaccelerate(brake);
 
-        if (throttle == 0 && brake == 0)
-             engine.deaccelerate(20.f); // Fricción suave
+        if (throttle == 0 && brake == 0) engine.deaccelerate(20.f);
 
-        // Crucero (simplificado para el ejemplo)
         static bool cruiseMode = false;
         static bool cLastState = false;
         bool cState = sf::Keyboard::isKeyPressed(sf::Keyboard::C);
@@ -124,90 +145,105 @@ int main() {
         }
         cLastState = cState;
 
-        if (cruiseMode && throttle == 0 && brake == 0)
-            engine.deaccelerate(0.f); // Mantiene velocidad
+        if (cruiseMode && throttle == 0 && brake == 0) engine.deaccelerate(0.f);
 
         engine.update(dtSim);
         piston.update(engine.getAngle());
 
-        // --- SISTEMA DE PARTÍCULAS (HUMO) ---
-        // 1. Generar humo si está en escape y el motor gira rápido
+        // --- PARTICULAS ---
         if (piston.isExhaustPhase(engine.getAngle()) && currentRPM > 50.f) {
-            // Generar 2 partículas por frame para densidad
-            for(int i=0; i<2; i++) {
+            // Más partículas a más RPM
+            int pCount = 1 + (int)(currentRPM / 800.f);
+            for(int i=0; i<pCount; i++) {
                 Particle p;
                 p.position = piston.getExhaustPortPosition();
-                // Velocidad aleatoria hacia arriba/derecha
-                float speedX = (rand() % 50 + 50); 
-                float speedY = -(rand() % 50 + 20);
+                float speedX = (rand() % 60 + 60); 
+                float speedY = -(rand() % 40 + 20);
                 p.velocity = sf::Vector2f(speedX, speedY);
-                p.maxLifetime = 1.0f + (rand()%100)/100.f; // 1 a 2 segs
+                p.maxLifetime = 0.5f + (rand()%100)/200.f; 
                 p.lifetime = p.maxLifetime;
-                p.size = (rand() % 10) + 5.f;
+                p.size = (rand() % 8) + 4.f;
                 p.rotation = rand() % 360;
                 p.angularVelocity = (rand() % 100) - 50.f;
                 smokeParticles.push_back(p);
             }
         }
 
-        // 2. Actualizar partículas (SIEMPRE usar dtReal para que la animación fluya suave
-        //    incluso si el motor va en cámara lenta, O usar dtSim si quieres humo lento.
-        //    Usaremos dtSim para que sea coherente con el efecto Matrix)
         for (auto it = smokeParticles.begin(); it != smokeParticles.end(); ) {
-            it->lifetime -= dtSim;
+            it->lifetime -= dtReal; // Usar dtReal para fluidez visual independiente de slowmo
             if (it->lifetime <= 0) {
                 it = smokeParticles.erase(it);
             } else {
-                it->position += it->velocity * dtSim;
-                it->rotation += it->angularVelocity * dtSim;
-                it->size += 10.f * dtSim; // El humo se expande
-                it->velocity.y -= 10.f * dtSim; // Flota suave
+                it->position += it->velocity * dtReal; 
+                it->rotation += it->angularVelocity * dtReal;
+                it->size += 15.f * dtReal; 
+                it->velocity *= 0.98f; // Fricción aire
+                it->velocity.y -= 5.f * dtReal; // Flotabilidad
                 ++it;
             }
         }
 
-        // --- ACTUALIZAR HUD ---
-        std::stringstream ss;
-        ss << std::fixed << std::setprecision(0) << currentRPM;
-        rpmText.setString(ss.str() + " RPM");
-        
-        phaseText.setString(piston.getCyclePhaseName(engine.getAngle()));
-        
-        // Barra acelerador (visual) - Escala simple
-        float barWidth = std::min(throttle * 20.f, 200.f); 
-        if (cruiseMode) {
-             throttleBarFill.setFillColor(sf::Color::Cyan); // Azul para crucero
-             throttleBarFill.setSize(sf::Vector2f(200.f, 20.f)); // Lleno en crucero visualmente
+        // --- HUD LOGIC ---
+        std::stringstream ssRPM;
+        ssRPM << (int)currentRPM;
+        rpmText.setString(ssRPM.str());
+
+        // Color RPM dinámico
+        if (engine.isRedlining()) {
+            // Parpadeo rojo/blanco frenético
+            if ((int)(dtReal * 1000) % 2 == 0) rpmText.setFillColor(sf::Color::Red);
+            else rpmText.setFillColor(sf::Color::White);
+        } else if (currentRPM > 1500) {
+            rpmText.setFillColor(sf::Color(255, 100, 0)); // Naranja alerta
         } else {
-             throttleBarFill.setFillColor(sf::Color(0, 255, 100));
-             throttleBarFill.setSize(sf::Vector2f(barWidth, 20.f));
+            rpmText.setFillColor(sf::Color::White);
         }
 
-        // --- RENDER ---
-        window.clear(sf::Color(25, 25, 30)); // Fondo Gris Oscuro (Técnico)
+        std::stringstream ssStats;
+        ssStats << "ODOMETRO: " << std::fixed << std::setprecision(1) << engine.getTotalRevolutions() << " revs\n"
+                << "TIEMPO: " << (int)runTimeClock.getElapsedTime().asSeconds() << " s";
+        statsText.setString(ssStats.str());
         
-        // Dibujar partículas (detrás del HUD, delante o al nivel del motor)
+        phaseText.setString(piston.getCyclePhaseName(engine.getAngle()));
+        if (phaseText.getString() == "EXPLOSION") phaseText.setFillColor(sf::Color::Yellow);
+        else phaseText.setFillColor(sf::Color(100, 200, 255));
+
+        // Barra RPM
+        float fillPct = currentRPM / 2000.f;
+        if(fillPct > 1.f) fillPct = 1.f;
+        rpmBarFill.setSize(sf::Vector2f(250.f * fillPct, 10.f));
+        // Color de la barra (Gradiente simulado)
+        if(fillPct < 0.7f) rpmBarFill.setFillColor(sf::Color::Green);
+        else if(fillPct < 0.9f) rpmBarFill.setFillColor(sf::Color::Yellow);
+        else rpmBarFill.setFillColor(sf::Color::Red);
+
+        // --- RENDER ---
+        window.clear(sf::Color(20, 20, 25)); // Fondo aún más técnico
+        
         for (const auto& p : smokeParticles) {
             sf::RectangleShape shape(sf::Vector2f(p.size, p.size));
             shape.setOrigin(p.size/2, p.size/2);
             shape.setPosition(p.position);
             shape.setRotation(p.rotation);
-            
-            // Color gris que se desvanece
-            float alpha = (p.lifetime / p.maxLifetime) * 150;
+            float alpha = (p.lifetime / p.maxLifetime) * 100;
             shape.setFillColor(sf::Color(150, 150, 150, (sf::Uint8)alpha));
-            
             window.draw(shape);
         }
 
         piston.draw(window);
 
-        // Dibujar HUD
+        // Dibujar HUD (asegurarse de que la vista del HUD no vibre)
+        window.setView(window.getDefaultView()); // Restaurar vista quieta para el texto
         window.draw(rpmText);
+        window.draw(sf::Text("RPM", font, 15)); // Etiqueta pequeña
+        window.draw(rpmBarBack);
+        window.draw(rpmBarFill);
+        window.draw(statsText);
         window.draw(phaseText);
-        window.draw(throttleBarBack);
-        window.draw(throttleBarFill);
         window.draw(controlsText);
+        
+        // Restaurar vista vibratoria para el siguiente frame del motor
+        window.setView(view); 
 
         window.display();
     }
