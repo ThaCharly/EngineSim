@@ -2,21 +2,24 @@
 #include <SFML/Audio.hpp>
 #include <vector>
 #include <cmath>
-#include <cstdlib>
+#include <algorithm>
 
+// Clase para sintetizar sonido de motor mediante "Impulsos de Combustión"
 class SoundGenerator : public sf::SoundStream {
 public:
-    SoundGenerator() : currentRPM(0), amplitude(0) {
+    SoundGenerator() : currentRPM(0.f), targetVolume(1.0f) {
+        // Inicializamos audio mono a 44.1kHz
         initialize(1, 44100);
     }
 
     void setRPM(float rpm) {
-        // Suavizado simple para que el tono no salte de golpe
+        // Suavizado para evitar saltos bruscos de tono
         currentRPM = currentRPM * 0.9f + rpm * 0.1f;
+        if (currentRPM < 10.f) currentRPM = 0.f;
     }
 
     void setVolume(float vol) {
-        amplitude = vol;
+        targetVolume = vol;
     }
 
 protected:
@@ -26,57 +29,63 @@ protected:
         const float sampleRate = 44100.f;
 
         for (int i = 0; i < samplesToStream; ++i) {
-            time += 1.0f / sampleRate;
+            // 1. Calcular frecuencia de disparo (Firing Rate)
+            // Motor 4 tiempos = 1 explosión cada 2 revoluciones (720 grados)
+            // Frecuencia (Hz) = (RPM / 60) / 2
+            // Ejemplo: 600 RPM -> 10 rev/s -> 5 explosiones/s (5 Hz)
+            float fireFreq = (currentRPM / 120.f); 
+            if (fireFreq < 0.1f) fireFreq = 0.1f; // Evitar div/0
 
-            // --- SÍNTESIS DE MOTOR DE COMBUSTIÓN ---
+            // Avance del tiempo del ciclo del motor (0.0 a 1.0)
+            engineCycleTime += fireFreq / sampleRate;
+            if (engineCycleTime >= 1.0f) {
+                engineCycleTime -= 1.0f;
+                // ¡MOMENTO DE EXPLOSIÓN! Reiniciamos el tiempo del pulso
+                pulseTimer = 0.0f; 
+            }
+
+            // 2. Generar el "Golpe" (Impulso)
+            // Cuando pulseTimer es bajo (recién explotó), suena fuerte.
+            // Luego se desvanece rápidamente.
+            float sampleValue = 0.f;
+
+            // Incrementamos timer del pulso
+            pulseTimer += 1.0f / sampleRate;
+
+            // Solo generamos sonido si el pulso es "fresco" (ej. menos de 0.15 seg)
+            // Esto crea el silencio entre explosiones a bajas RPM.
+            if (pulseTimer < 0.15f) {
+                // A. Tono Base (El "Cuerpo" del sonido)
+                // Usamos una onda senoidal grave que baja de tono ligeramente (golpe de tambor)
+                // Frecuencia base: 60Hz + un poco de RPM para que "grite" al acelerar
+                float bodyFreq = 60.f + (currentRPM * 0.03f);
+                
+                // Chirp: Hacemos que la frecuencia caiga rápido en el tiempo del pulso (efecto "Piuuum" muy sutil)
+                float instantFreq = bodyFreq * (1.0f - pulseTimer * 2.f); 
+                
+                // Onda principal
+                float wave = std::sin(pulseTimer * instantFreq * 2.f * 3.14159f);
+
+                // B. Distorsión (El "Carácter")
+                // Elevamos al cubo para recortar la onda y hacerla más "cuadrada/agresiva" sin ruido
+                wave = wave * wave * wave; 
+
+                // C. Envolvente de Volumen (Decay)
+                // El sonido empieza fuerte y muere exponencialmente
+                float decay = std::exp(-pulseTimer * 30.f); // Ajustar 30.f para duración del golpe
+
+                sampleValue = wave * decay;
+            }
+
+            // 3. Salida Final
+            // Escalamos a 16-bit con volumen
+            float finalOut = sampleValue * targetVolume * 30000.f;
             
-            // 1. Frecuencia de Disparo (Firing Frequency)
-            // En un 4 tiempos, explota 1 vez cada 2 vueltas.
-            // Hz = (RPM / 60) / 2 = RPM / 120.
-            // Usamos un mínimo de 600 RPM para evitar divisiones por cero o infrasonidos raros.
-            float effectiveRPM = (currentRPM < 100.f) ? 100.f : currentRPM;
-            float fireFreq = effectiveRPM / 120.0f; 
+            // Hard Clip de seguridad
+            if (finalOut > 32000.f) finalOut = 32000.f;
+            if (finalOut < -32000.f) finalOut = -32000.f;
 
-            // 2. Oscilador Principal (Diente de Sierra - Sawtooth)
-            // Esto marca el ritmo de las explosiones.
-            // fmod genera un valor de 0.0 a 1.0 repetitivo.
-            float periodPos = std::fmod(time * fireFreq, 1.0f);
-            
-            // Transformamos 0..1 en una onda diente de sierra que cae (-1 a 1)
-            // Esta forma de onda tiene mucha energía en graves.
-            float rawSaw = 1.0f - (2.0f * periodPos);
-
-            // 3. Textura (Ruido)
-            // El motor es metal golpeando y gas escapando. Eso es ruido blanco.
-            float noise = ((std::rand() % 100) / 50.f - 1.f);
-
-            // 4. Modulación (La Magia)
-            // No queremos que el ruido suene todo el tiempo (shhhhh).
-            // Queremos que suene fuerte cuando explota y baje.
-            // Usamos el 'rawSaw' para controlar el volumen del ruido.
-            // Cuando rawSaw es alto (inicio explosión), dejamos pasar el ruido.
-            float envelope = rawSaw; 
-            if (envelope < 0) envelope = 0; // Solo la parte positiva
-            
-            // Mezcla:
-            // - Tono base (onda cuadrada distorsionada de la sierra) para el "cuerpo" grave.
-            // - Ruido modulado para la "textura" del escape.
-            
-            float body = (rawSaw > 0) ? 1.0f : -1.0f; // Onda cuadrada (Square wave) = Sonido 8-bit gordo
-            float engineTone = (body * 0.5f) + (noise * envelope * 0.8f);
-
-            // 5. Filtro Low-Pass "Trucho" (Simulado)
-            // A altas RPM, bajamos un poco el volumen de los agudos para que no chille.
-            if (currentRPM > 4000) engineTone *= 0.5f;
-
-            // 6. Output Final
-            float finalSample = engineTone * amplitude * 8000.f;
-
-            // Soft Clipping para distorsión analógica (evita el "clipping" digital feo)
-            if (finalSample > 32000) finalSample = 32000;
-            if (finalSample < -32000) finalSample = -32000;
-
-            samples[i] = static_cast<sf::Int16>(finalSample);
+            samples[i] = static_cast<sf::Int16>(finalOut);
         }
 
         data.samples = &samples[0];
@@ -88,6 +97,9 @@ protected:
 
 private:
     float currentRPM;
-    float amplitude;
-    float time = 0.f;
+    float targetVolume;
+    
+    // Variables de estado para la síntesis
+    float engineCycleTime = 0.f; // Posición en el ciclo de 720 grados (0 a 1)
+    float pulseTimer = 1.0f;     // Tiempo desde la última explosión (segundos)
 };
