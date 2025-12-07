@@ -1,4 +1,6 @@
 #include <SFML/Graphics.hpp>
+#include <iomanip>
+#include <sstream>
 #include "Engine.hpp"
 #include "Piston.hpp"
 
@@ -54,17 +56,23 @@ int main() {
 
         // Aplicar solo UNA vez por frame
         engine.accelerate(throttle);
-        engine.deaccelerate(brake);
+        engine.deaccelerate(brake); 
 
-        // Si no hay nada, desaceleración natural
-        if (throttle == 0 && brake == 0)
-            engine.deaccelerate(20.f);
-
-
-                // Crucero??
         static bool cruiseMode = false;
         static bool cKeyPressed = false;
         static float cruiseRPM = 0.f;
+
+        // Si no hay nada, desaceleración natural
+        if (throttle == 0 && brake == 0) {
+            if (cruiseMode) {
+                engine.deaccelerate(0.f); // Sin fricción en crucero
+            } else {
+                engine.deaccelerate(20.f); // Fricción normal
+            }
+        }
+
+
+                // Crucero??
 
         if (sf::Keyboard::isKeyPressed(sf::Keyboard::C)) {
             if (!cKeyPressed) {
@@ -78,12 +86,16 @@ int main() {
             }
 
             if (cruiseMode)
-                engine.cruise(cruiseRPM);
+            engine.cruise(cruiseRPM);
 
         engine.update(dt);
-        piston.update(engine.getAngle()); // Reducir velocidad angular para visualización, por ejemplo dividir entre 10
+        piston.update(engine.getAngle());
 
-        rpmText.setString("RPM: " + std::to_string((int)engine.getRPM()));
+        std::stringstream stream;
+        stream << std::fixed << std::setprecision(2) << engine.getRPM();
+        rpmText.setString("RPM: " + stream.str());
+
+        window.clear(sf::Color::Black);
 
         window.clear(sf::Color::Black);
         piston.draw(window);
