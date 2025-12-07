@@ -1,5 +1,6 @@
 # Compilados y temporales
 build/
+docs/
 
 # CMake
 CMakeLists.txt
