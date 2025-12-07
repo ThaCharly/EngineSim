@@ -1,6 +1,6 @@
 #include "Piston.hpp"
 #include <cmath>
-#include <algorithm> // Para std::max
+#include <algorithm>
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
@@ -9,24 +9,23 @@
 Piston::Piston(float x, float y) 
     : crankCenter(x, y), crankRadius(50.f), rodLength(150.f) 
 {
-    // --- PALETA DE COLORES ---
+    // --- COLORES ---
     sf::Color steelColor(160, 160, 160);
     sf::Color darkSteel(100, 100, 100);
     sf::Color ironColor(70, 70, 80);
     sf::Color aluminumColor(200, 200, 200);
     sf::Color valveColor(180, 180, 180);
 
-    // Colores del ciclo
-    colorFuel = sf::Color(100, 200, 255, 150);  // Celeste semitransparente
-    colorComp = sf::Color(50, 100, 255, 200);   // Azul intenso
-    colorFire = sf::Color(255, 255, 0, 240);    // Amarillo explosión
-    colorExhaust = sf::Color(100, 100, 100, 180); // Gris humo
+    colorFuel = sf::Color(100, 200, 255, 150);
+    colorComp = sf::Color(50, 100, 255, 200);
+    colorFire = sf::Color(255, 220, 0, 240); // Amarillo más cálido
+    colorExhaust = sf::Color(100, 100, 100, 180);
 
     // 1. CIGÜEÑAL
     mainBearing.setRadius(15.f);
     mainBearing.setOrigin(15.f, 15.f);
     mainBearing.setPosition(crankCenter);
-    mainBearing.setFillColor(sf::Color(40, 40, 40));
+    mainBearing.setFillColor(sf::Color(30, 30, 30));
 
     crankArm.setSize(sf::Vector2f(crankRadius, 24.f));
     crankArm.setOrigin(0.f, 12.f);
@@ -35,7 +34,7 @@ Piston::Piston(float x, float y)
 
     crankPin.setRadius(10.f);
     crankPin.setOrigin(10.f, 10.f);
-    crankPin.setFillColor(sf::Color(30, 30, 30));
+    crankPin.setFillColor(sf::Color(20, 20, 20));
 
     // 2. BIELA
     pistonRod.setSize(sf::Vector2f(14.f, rodLength + 10.f)); 
@@ -87,22 +86,22 @@ Piston::Piston(float x, float y)
     headBlock.setOutlineThickness(2.f);
     headBlock.setOutlineColor(sf::Color(50, 50, 50));
 
-    // --- GAS CHAMBER (NUEVO) ---
-    // Se inicializa aquí, pero su tamaño y color cambian en update()
+    // Gas Chamber
     gasChamber.setPosition(x - 32.f, deckHeight);
-    gasChamber.setSize(sf::Vector2f(64.f, 0.f)); // Altura variable
+    gasChamber.setSize(sf::Vector2f(64.f, 0.f)); 
     gasChamber.setFillColor(sf::Color::Transparent);
 
-    // --- VÁLVULAS Y BUJÍA ---
-    // Posición base de las válvulas (cerradas)
+    // Válvulas
+    float valveBaseY = deckHeight - 45.f;
+    
     valveIntake.setSize(sf::Vector2f(8.f, 50.f));
     valveIntake.setOrigin(4.f, 0.f);
-    valveIntake.setPosition(x - 20.f, deckHeight - 45.f); 
+    valveIntake.setPosition(x - 20.f, valveBaseY); 
     valveIntake.setFillColor(valveColor);
 
     valveExhaust.setSize(sf::Vector2f(8.f, 50.f));
     valveExhaust.setOrigin(4.f, 0.f);
-    valveExhaust.setPosition(x + 20.f, deckHeight - 45.f);
+    valveExhaust.setPosition(x + 20.f, valveBaseY);
     valveExhaust.setFillColor(valveColor);
 
     sparkPlugBody.setSize(sf::Vector2f(12.f, 30.f));
@@ -116,8 +115,35 @@ Piston::Piston(float x, float y)
     sparkPlugTip.setFillColor(sf::Color(30, 30, 30));
 }
 
+// --- LOGICA AUXILIAR ---
+float getCyclePhaseInternal(float angle) {
+    float phaseOffset = angle + (M_PI / 2.0);
+    float cyclePhase = std::fmod(phaseOffset, 4.0 * M_PI);
+    if (cyclePhase < 0) cyclePhase += 4.0 * M_PI;
+    return cyclePhase;
+}
+
+std::string Piston::getCyclePhaseName(float angle) const {
+    float p = getCyclePhaseInternal(angle);
+    if (p < M_PI) return "ADMISION";
+    if (p < 2.0 * M_PI) return "COMPRESION";
+    if (p < 3.0 * M_PI) return "EXPLOSION";
+    return "ESCAPE";
+}
+
+sf::Vector2f Piston::getExhaustPortPosition() const {
+    // La posición de salida está un poco arriba de la válvula de escape
+    sf::Vector2f pos = valveExhaust.getPosition();
+    return sf::Vector2f(pos.x + 10.f, pos.y - 10.f); // Ajuste manual
+}
+
+bool Piston::isExhaustPhase(float angle) const {
+    float p = getCyclePhaseInternal(angle);
+    return (p >= 3.0 * M_PI);
+}
+
 void Piston::update(float angle) {
-    // --- 1. CÁLCULO FÍSICO BÁSICO ---
+    // 1. Cinemática
     float crankX = crankCenter.x + crankRadius * std::cos(angle);
     float crankY = crankCenter.y + crankRadius * std::sin(angle);
     sf::Vector2f crankPos(crankX, crankY);
@@ -127,102 +153,65 @@ void Piston::update(float angle) {
     float rodVerticalH = std::sqrt(rodLength * rodLength - diffX * diffX);
     sf::Vector2f pistonPos(crankCenter.x, crankY - rodVerticalH);
 
-    // --- 2. LÓGICA DEL CICLO DE 4 TIEMPOS ---
-    
-    // Necesitamos convertir el ángulo continuo en una fase de 0 a 720 grados (0 a 4*PI)
-    // Ajuste: En SFML, ángulo 0 es "derecha" (3 en punto).
-    // Queremos que el ciclo empiece en TDC (Punto Muerto Superior).
-    // TDC ocurre visualmente a -PI/2 (-90 grados).
-    // Entonces, Phase 0 = Angle + PI/2.
-    
-    float phaseOffset = angle + (M_PI / 2.0);
-    
-    // Usamos fmod para obtener el ciclo repetitivo de 0 a 4PI
-    float cyclePhase = std::fmod(phaseOffset, 4.0 * M_PI);
-    if (cyclePhase < 0) cyclePhase += 4.0 * M_PI; // Manejar negativos por si acaso
+    // 2. Ciclo 4 Tiempos
+    float cyclePhase = getCyclePhaseInternal(angle);
 
-    // Definimos las constantes del ciclo
     const float PI = M_PI;
     const float TWO_PI = 2.0 * M_PI;
     const float THREE_PI = 3.0 * M_PI;
-    const float FOUR_PI = 4.0 * M_PI;
 
-    // Altura del pistón relativa al "deck" (tope del cilindro) para dibujar el gas
     float deckHeight = headBlock.getPosition().y;
-    // El tope del pistón visualmente es su posición Y - 25 (su origen está en el centro)
     float pistonTopY = pistonPos.y - 25.f; 
     float chamberHeight = std::max(0.f, pistonTopY - deckHeight);
-
     gasChamber.setSize(sf::Vector2f(64.f, chamberHeight));
 
-    // --- 3. ANIMACIÓN DE COMPONENTES ---
-
-    // Resetear posiciones y colores
     float intakeLift = 0.f;
     float exhaustLift = 0.f;
     sf::Color gasColor = sf::Color::Transparent;
-    sf::Color sparkColor = sf::Color(30, 30, 30); // Apagada
+    sf::Color sparkColor = sf::Color(30, 30, 30);
 
-    // --- FASE 1: ADMISIÓN (0 a PI) ---
-    // El pistón baja, válvula admisión abierta.
+    // ADMISIÓN
     if (cyclePhase >= 0 && cyclePhase < PI) {
-        // Curva seno simple para abrir y cerrar la válvula
         intakeLift = std::sin(cyclePhase) * 10.f; 
-        gasColor = colorFuel; // Entra mezcla fresca
+        gasColor = colorFuel;
     }
-    
-    // --- FASE 2: COMPRESIÓN (PI a 2PI) ---
-    // El pistón sube, válvulas cerradas.
+    // COMPRESIÓN
     else if (cyclePhase >= PI && cyclePhase < TWO_PI) {
-        // Oscurecemos el color a medida que se comprime
-        float compressionFactor = (cyclePhase - PI) / PI; // 0.0 a 1.0
-        // Mezclamos colorFuel con colorComp
-        gasColor.r = colorFuel.r * (1.f - compressionFactor) + colorComp.r * compressionFactor;
-        gasColor.g = colorFuel.g * (1.f - compressionFactor) + colorComp.g * compressionFactor;
-        gasColor.b = colorFuel.b * (1.f - compressionFactor) + colorComp.b * compressionFactor;
-        gasColor.a = 150 + (105 * compressionFactor); // Más opaco
+        float factor = (cyclePhase - PI) / PI;
+        gasColor.r = colorFuel.r * (1.f - factor) + colorComp.r * factor;
+        gasColor.g = colorFuel.g * (1.f - factor) + colorComp.g * factor;
+        gasColor.b = colorFuel.b * (1.f - factor) + colorComp.b * factor;
+        gasColor.a = 150 + (105 * factor);
     }
-
-    // --- FASE 3: EXPLOSIÓN / EXPANSIÓN (2PI a 3PI) ---
-    // Justo al inicio (2PI) salta la chispa. El pistón baja.
+    // EXPLOSIÓN
     else if (cyclePhase >= TWO_PI && cyclePhase < THREE_PI) {
-        float powerPhase = cyclePhase - TWO_PI; // 0.0 a PI
-        
-        // CHISPA: Solo al principio (primeros 15 grados aprox = 0.26 rad)
-        if (powerPhase < 0.3f) {
-            sparkColor = sf::Color::White; // Flash chispa
-            gasColor = sf::Color::White;   // Flash cámara completa
+        float powerPhase = cyclePhase - TWO_PI;
+        if (powerPhase < 0.25f) { // Chispa corta
+            sparkColor = sf::Color::White;
+            gasColor = sf::Color(255, 255, 200, 255);
         } else {
-            // Fuego que se desvanece a humo/naranja
-            float fade = powerPhase / PI; // 0 a 1
-            // De Amarillo (Fire) a Rojo/Naranja
+            float fade = powerPhase / PI;
             gasColor.r = 255;
-            gasColor.g = 255 * (1.f - fade); // Verde baja -> se hace rojo
+            gasColor.g = 255 * (1.f - fade * 0.8f); // Pasa a rojo
             gasColor.b = 0;
-            gasColor.a = 240 * (1.f - fade * 0.5); 
+            gasColor.a = 240 * (1.f - fade * 0.5f);
         }
     }
-
-    // --- FASE 4: ESCAPE (3PI a 4PI) ---
-    // El pistón sube, válvula escape abierta.
+    // ESCAPE
     else {
-        float exhaustPhase = cyclePhase - THREE_PI; // 0 a PI
+        float exhaustPhase = cyclePhase - THREE_PI;
         exhaustLift = std::sin(exhaustPhase) * 10.f;
         gasColor = colorExhaust;
     }
 
-    // Aplicar movimiento a las válvulas
-    // Posición base = deckHeight - 45.
-    // + Lift (bajar visualmente es sumar en Y)
     float valveBaseY = deckHeight - 45.f;
     valveIntake.setPosition(valveIntake.getPosition().x, valveBaseY + intakeLift);
     valveExhaust.setPosition(valveExhaust.getPosition().x, valveBaseY + exhaustLift);
     
-    // Aplicar colores
     sparkPlugTip.setFillColor(sparkColor);
     gasChamber.setFillColor(gasColor);
 
-    // --- ACTUALIZAR VISUALES MECÁNICOS ---
+    // 3. Visuales
     crankPin.setPosition(crankPos);
 
     sf::Vector2f delta = crankPos - crankCenter;
@@ -240,21 +229,14 @@ void Piston::update(float angle) {
 }
 
 void Piston::draw(sf::RenderWindow& window) {
-    // 1. Gas (Fondo de la cámara) - Primero para que quede detrás del bloque y pistón
     window.draw(gasChamber);
-
-    // 2. Detalles internos traseros
     window.draw(sparkPlugTip);
     window.draw(valveIntake);
     window.draw(valveExhaust);
-    
-    // 3. Bloque (Capa media)
     window.draw(leftBlock);
     window.draw(rightBlock);
     window.draw(headBlock);
     window.draw(sparkPlugBody);
-
-    // 4. Mecanismo (Frente)
     window.draw(pistonRod);
     window.draw(pistonHead);
     window.draw(wristPin);

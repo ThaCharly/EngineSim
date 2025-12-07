@@ -1,5 +1,6 @@
 #pragma once
 #include <SFML/Graphics.hpp>
+#include <string>
 
 class Piston {
 private:
@@ -27,17 +28,27 @@ private:
     sf::RectangleShape sparkPlugBody;
     sf::RectangleShape sparkPlugTip;
     
-    // NUEVO: La cámara de combustión (el gas de colores)
+    // Cámara de combustión
     sf::RectangleShape gasChamber;
 
-    // Colores base para reutilizar
-    sf::Color colorFuel;    // Azul claro (mezcla)
-    sf::Color colorComp;    // Azul oscuro (comprimido)
-    sf::Color colorFire;    // Amarillo/Blanco (explosión)
-    sf::Color colorExhaust; // Gris (humo)
+    // Colores
+    sf::Color colorFuel;
+    sf::Color colorComp;
+    sf::Color colorFire;
+    sf::Color colorExhaust;
 
 public:
     Piston(float x, float y);
     void update(float angle);
     void draw(sf::RenderWindow& window);
+
+    // --- NUEVOS MÉTODOS PARA QoS ---
+    // Devuelve el nombre de la fase (Admisión, etc.) para el HUD
+    std::string getCyclePhaseName(float angle) const;
+    
+    // Devuelve la posición de la salida de escape para generar partículas
+    sf::Vector2f getExhaustPortPosition() const;
+    
+    // Devuelve true si estamos en fase de escape (para activar el emisor de humo)
+    bool isExhaustPhase(float angle) const;
 };
