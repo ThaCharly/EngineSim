@@ -1,0 +1,3 @@
+/home/thacharly/C++/C++/build/CMakeFiles/MotorSim.dir
+/home/thacharly/C++/C++/build/CMakeFiles/edit_cache.dir
+/home/thacharly/C++/C++/build/CMakeFiles/rebuild_cache.dir
