@@ -4,29 +4,37 @@
 class Piston {
 private:
     // Geometría del motor
-    float crankRadius; // Radio del cigüeñal
-    float rodLength;   // Largo de la biela
+    float crankRadius;
+    float rodLength;
     sf::Vector2f crankCenter;
 
     // --- Partes MÓVILES ---
-    sf::RectangleShape pistonHead; // Cabeza del pistón
-    sf::RectangleShape pistonRod;  // Biela
-    sf::RectangleShape crankArm;   // Brazo cigüeñal
-    sf::CircleShape crankPin;      // Muñequilla
-    sf::CircleShape wristPin;      // Bulón
-    sf::CircleShape mainBearing;   // Eje central
+    sf::RectangleShape pistonHead;
+    sf::RectangleShape pistonRod;
+    sf::RectangleShape crankArm;
+    sf::CircleShape crankPin;
+    sf::CircleShape wristPin;
+    sf::CircleShape mainBearing;
     
     // --- Partes ESTÁTICAS (Motor) ---
-    // Usaremos ConvexShape para formas complejas (el bloque cortado)
-    sf::ConvexShape leftBlock;     // Pared izquierda + Cárter
-    sf::ConvexShape rightBlock;    // Pared derecha + Cárter
-    sf::RectangleShape headBlock;  // La culata (tapa)
+    sf::ConvexShape leftBlock;
+    sf::ConvexShape rightBlock;
+    sf::RectangleShape headBlock;
 
-    // --- Detalles (Válvulas y Bujía) ---
+    // --- Detalles Funcionales ---
     sf::RectangleShape valveIntake;
     sf::RectangleShape valveExhaust;
     sf::RectangleShape sparkPlugBody;
     sf::RectangleShape sparkPlugTip;
+    
+    // NUEVO: La cámara de combustión (el gas de colores)
+    sf::RectangleShape gasChamber;
+
+    // Colores base para reutilizar
+    sf::Color colorFuel;    // Azul claro (mezcla)
+    sf::Color colorComp;    // Azul oscuro (comprimido)
+    sf::Color colorFire;    // Amarillo/Blanco (explosión)
+    sf::Color colorExhaust; // Gris (humo)
 
 public:
     Piston(float x, float y);
