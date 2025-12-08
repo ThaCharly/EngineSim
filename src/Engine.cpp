@@ -4,7 +4,7 @@
 
 Engine::Engine()
     : rpm(0.f), angle(0.f), throttle(0.f), friction(50.f), 
-      maxRPM(2000.f), totalRevolutions(0.0), revLimiterActive(false) {}
+      maxRPM(7000.f), totalRevolutions(0.0), revLimiterActive(false) {}
 
 void Engine::accelerate(float amount) {
     throttle = amount;
